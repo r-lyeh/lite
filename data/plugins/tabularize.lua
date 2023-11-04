@@ -1,3 +1,4 @@
+-- mod-version:3
 local core = require "core"
 local command = require "core.command"
 local translate = require "core.doc.translate"
@@ -40,21 +41,23 @@ end
 
 
 command.add("core.docview", {
-  ["tabularize:tabularize"] = function()
-    core.command_view:enter("Tabularize On Delimiter", function(delim)
-      if delim == "" then delim = " " end
+  ["tabularize:tabularize"] = function(dv)
+    core.command_view:enter("Tabularize On Delimiter", {
+      submit = function(delim)
+        if delim == "" then delim = " " end
 
-      local doc = core.active_view.doc
-      local line1, col1, line2, col2, swap = doc:get_selection(true)
-      line1, col1 = doc:position_offset(line1, col1, translate.start_of_line)
-      line2, col2 = doc:position_offset(line2, col2, translate.end_of_line)
-      doc:set_selection(line1, col1, line2, col2, swap)
+        local doc = dv.doc
+        local line1, col1, line2, col2, swap = doc:get_selection(true)
+        line1, col1 = doc:position_offset(line1, col1, translate.start_of_line)
+        line2, col2 = doc:position_offset(line2, col2, translate.end_of_line)
+        doc:set_selection(line1, col1, line2, col2, swap)
 
-      doc:replace(function(text)
-        local lines = gmatch_to_array(text, "[^\n]*\n?")
-        tabularize_lines(lines, delim)
-        return table.concat(lines)
-      end)
-    end)
+        doc:replace(function(text)
+          local lines = gmatch_to_array(text, "[^\n]*\n?")
+          tabularize_lines(lines, delim)
+          return table.concat(lines)
+        end)
+      end
+    })
   end,
 })

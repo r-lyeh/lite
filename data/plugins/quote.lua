@@ -1,3 +1,4 @@
+-- mod-version:3
 local core = require "core"
 local command = require "core.command"
 local keymap = require "core.keymap"
@@ -18,8 +19,8 @@ end
 
 
 command.add("core.docview", {
-  ["quote:quote"] = function()
-    core.active_view.doc:replace(function(text)
+  ["quote:quote"] = function(dv)
+    dv.doc:replace(function(text)
       return '"' .. text:gsub("[\0-\31\\\"]", replace) .. '"'
     end)
   end,

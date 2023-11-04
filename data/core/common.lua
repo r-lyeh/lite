@@ -1,5 +1,9 @@
 local common = {}
 
+function common.copy_position_and_size(dst, src)
+  dst.position.x, dst.position.y = src.position.x, src.position.y
+  dst.size.x, dst.size.y = src.size.x, src.size.y
+end
 
 function common.is_utf8_cont(char)
   local byte = char:byte()
@@ -11,6 +15,13 @@ function common.utf8_chars(text)
   return text:gmatch("[\0-\x7f\xc2-\xf4][\x80-\xbf]*")
 end
 
+--< https://github.com/rxi/lite/issues/300
+function common.utf8_len(text)
+  local len = 0
+  for char in common.utf8_chars(text) do len = len + 1 end
+  return len
+end
+--<
 
 function common.clamp(n, lo, hi)
   return math.max(math.min(n, hi), lo)
@@ -19,6 +30,13 @@ end
 
 function common.round(n)
   return n >= 0 and math.floor(n + 0.5) or math.ceil(n - 0.5)
+end
+
+
+function common.find_index(tbl, prop)
+  for i, o in ipairs(tbl) do
+    if o[prop] then return i end
+  end
 end
 
 
@@ -52,6 +70,26 @@ function common.color(str)
   end
   return r, g, b, a * 0xff
 end
+
+
+function common.splice(t, at, remove, insert)
+  insert = insert or {}
+  local offset = #insert - remove
+  local old_len = #t
+  if offset < 0 then
+    for i = at - offset, old_len - offset do
+      t[i + offset] = t[i]
+    end
+  elseif offset > 0 then
+    for i = old_len, at, -1 do
+      t[i + offset] = t[i]
+    end
+  end
+  for i, item in ipairs(insert) do
+    t[at + i - 1] = item
+  end
+end
+
 
 
 local function compare_score(a, b)
@@ -136,5 +174,18 @@ function common.bench(name, fn, ...)
   return res
 end
 
+
+function common.serialize(val)
+  if type(val) == "string" then
+    return string.format("%q", val)
+  elseif type(val) == "table" then
+    local t = {}
+    for k, v in pairs(val) do
+      table.insert(t, "[" .. common.serialize(k) .. "]=" .. common.serialize(v))
+    end
+    return "{" .. table.concat(t, ",") .. "}"
+  end
+  return tostring(val)
+end
 
 return common

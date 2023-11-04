@@ -40,8 +40,15 @@ local function project_scan_thread()
         local info = system.get_file_info(file)
         if info and info.size < size_limit then
           info.filename = file
-          table.insert(info.type == "dir" and dirs or files, info)
+--< https://github.com/0xd61/lite/blob/e5e7a2dc8c3e7d3f7f92ea5124bc111126ccfa1f/data/core/init.lua#L48-L68
+          local _, depth1 = file:gsub("/","")
+          local _, depth2 = file:gsub("\\","")
+          if (depth1+depth2) < config.project_scan_depth or config.project_scan_depth == 0 then
+            table.insert(info.type == "dir" and dirs or files, info)
+          end
         end
+        if (#dirs + #files) >= config.project_max_files_per_folder then break end
+--<
       end
     end
 
@@ -101,6 +108,8 @@ function core.init()
   core.docs = {}
   core.threads = setmetatable({}, { __mode = "k" })
   core.project_files = {}
+  core.blink_start = system.get_time()
+  core.blink_timer = core.blink_start
   core.redraw = true
 
   core.root_view = RootView()
@@ -112,6 +121,9 @@ function core.init()
 
   core.add_thread(project_scan_thread)
   command.add_defaults()
+--< @r-lyeh
+  local got_language_error = not core.load_languages()
+--<
   local got_plugin_error = not core.load_plugins()
   local got_user_error = not core.try(require, "user")
   local got_project_error = not core.load_project_module()
@@ -120,14 +132,14 @@ function core.init()
     core.root_view:open_doc(core.open_doc(filename))
   end
 
-  if got_plugin_error or got_user_error or got_project_error then
+  if got_language_error or got_plugin_error or got_user_error or got_project_error then
     command.perform("core:open-log")
   end
 end
 
 
-local temp_uid = (system.get_time() * 1000) % 0xffffffff
-local temp_file_prefix = string.format(".lite_temp_%08x", temp_uid)
+local temp_uid = math.floor(system.get_time() * 1000) % 0xffffffff
+local temp_file_prefix = string.format(".lite_temp_%08x", tonumber(temp_uid)) --< @r-lyeh: tonumber()
 local temp_file_counter = 0
 
 local function delete_temp_files()
@@ -174,7 +186,7 @@ end
 
 function core.load_plugins()
   local no_errors = true
-  local files = system.list_dir(EXEDIR .. "/data/plugins")
+  local files = system.list_dir(DATADIR .. "/data/plugins")
   for _, filename in ipairs(files) do
     local modname = "plugins." .. filename:gsub(".lua$", "")
     local ok = core.try(require, modname)
@@ -187,6 +199,22 @@ function core.load_plugins()
   return no_errors
 end
 
+--< @r-lyeh
+function core.load_languages()
+  local no_errors = true
+  local files = system.list_dir(DATADIR .. "/data/languages")
+  for _, filename in ipairs(files) do
+    local modname = "languages." .. filename:gsub(".lua$", "")
+    local ok = core.try(require, modname)
+    if ok then
+      core.log_quiet("Loaded language %q", modname)
+    else
+      no_errors = false
+    end
+  end
+  return no_errors
+end
+--<
 
 function core.load_project_module()
   local filename = ".lite_project.lua"
@@ -226,6 +254,7 @@ function core.add_thread(f, weak_ref)
   local key = weak_ref or #core.threads + 1
   local fn = function() return core.try(f) end
   core.threads[key] = { cr = coroutine.create(fn), wake = 0 }
+  return key
 end
 
 
@@ -377,6 +406,9 @@ function core.step()
     end
     core.redraw = true
   end
+
+  if not core.redraw and not system.window_has_focus() then return false end --< https://github.com/rxi/lite/pull/285/commits/a38b89ca26dde1353cf1a6bcb2dc338ebc20473d
+
   if mouse_moved then
     core.try(core.on_event, "mousemoved", mouse.x, mouse.y, mouse.dx, mouse.dy)
   end
@@ -447,20 +479,26 @@ local run_threads = coroutine.wrap(function()
   end
 end)
 
+--< @r-lyeh { split core.run() into core.run1()
+function core.run1()
+  local did_redraw = core.step()
+  run_threads()
+  return did_redraw
+end
 
 function core.run()
   while true do
     core.frame_start = system.get_time()
-    local did_redraw = core.step()
-    run_threads()
-    if not did_redraw and not system.window_has_focus() then
-      system.wait_event(0.25)
-    end
+    local did_redraw = core.run1()
     local elapsed = system.get_time() - core.frame_start
     system.sleep(math.max(0, 1 / config.fps - elapsed))
   end
 end
+--< @r-lyeh } split core.run() into core.run1()
 
+function core.blink_reset()
+  core.blink_start = system.get_time()
+end
 
 function core.on_error(err)
   -- write error to file
